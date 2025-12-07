@@ -1,21 +1,31 @@
-'use client'
+import React from 'react';
 
-export function DecisionMetricCard() {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Credit Score</p>
-        <p className="text-2xl font-bold">-</p>
-      </div>
-      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Credit Limit</p>
-        <p className="text-2xl font-bold">-</p>
-      </div>
-      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-6">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Loan Amount</p>
-        <p className="text-2xl font-bold">-</p>
-      </div>
-    </div>
-  )
+interface MetricCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  iconColor?: string;
 }
 
+export default function DecisionMetricCard({ 
+  icon, 
+  label, 
+  value,
+  iconColor = 'text-blue-600 dark:text-blue-400'
+}: MetricCardProps) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-3 mb-3">
+        <div className={iconColor}>
+          {icon}
+        </div>
+        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+          {label}
+        </span>
+      </div>
+      <div className="text-3xl font-bold text-gray-900 dark:text-white">
+        {value}
+      </div>
+    </div>
+  );
+}
