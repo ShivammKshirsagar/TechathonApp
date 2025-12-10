@@ -3,9 +3,11 @@ import MessageInput from './MessageInput';
 interface ChatLayoutProps {
   children: React.ReactNode;
   sidebar?: React.ReactNode;
+  onSendMessage?: (message: string) => void;
+  isLoading?: boolean;
 }
 
-export default function ChatLayout({ children, sidebar }: ChatLayoutProps) {
+export default function ChatLayout({ children, sidebar, onSendMessage, isLoading }: ChatLayoutProps) {
   return (
     <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)]">
       {/* Chat Area */}
@@ -15,7 +17,7 @@ export default function ChatLayout({ children, sidebar }: ChatLayoutProps) {
             {children}
           </div>
         </div>
-        <MessageInput />
+        <MessageInput onSend={onSendMessage} isLoading={isLoading} />
       </div>
 
       {/* Sidebar */}

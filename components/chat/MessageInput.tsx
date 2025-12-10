@@ -3,12 +3,17 @@
 import { useState } from 'react';
 import { Paperclip, Send } from 'lucide-react';
 
-export default function MessageInput() {
+interface MessageInputProps {
+  onSend?: (message: string) => void;
+  isLoading?: boolean;
+}
+
+export default function MessageInput({ onSend, isLoading = false }: MessageInputProps) {
   const [message, setMessage] = useState('');
 
   const handleSend = () => {
-    if (message.trim()) {
-      console.log('Sending:', message);
+    if (message.trim() && !isLoading) {
+      onSend?.(message.trim());
       setMessage('');
     }
   };
@@ -23,14 +28,19 @@ export default function MessageInput() {
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type your message..."
-            className="flex-1 bg-transparent outline-none text-gray-800 dark:text-gray-200 placeholder-gray-400"
+            disabled={isLoading}
+            className="flex-1 bg-transparent outline-none text-gray-800 dark:text-gray-200 placeholder-gray-400 disabled:opacity-50"
           />
-          <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+          <button 
+            disabled={isLoading}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+          >
             <Paperclip className="w-5 h-5" />
           </button>
           <button 
             onClick={handleSend}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 transition-colors"
+            disabled={isLoading || !message.trim()}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-5 h-5" />
           </button>
