@@ -72,17 +72,25 @@ export const validateMonthlyIncome = (income: number): ValidationResult => {
 };
 
 export const validateLoanAmount = (amount: number, monthlyIncome?: number): ValidationResult => {
-  if (amount < 10000) {
-    return { isValid: false, error: 'Minimum loan amount is ₹10,000' };
+  if (isNaN(amount) || amount <= 0) {
+    return { isValid: false, error: 'Please enter a valid loan amount' };
   }
   
-  if (amount > 5000000) {
-    return { isValid: false, error: 'Maximum loan amount is ₹50,00,000' };
-  }
-  
-  // Optional: Check loan-to-income ratio
-  if (monthlyIncome && amount > monthlyIncome * 60) {
-    return { isValid: false, error: 'Loan amount too high for your income' };
+  if (monthlyIncome) {
+    const maxLoanAmount = monthlyIncome * 12; // 12x monthly income as max loan
+    if (amount > maxLoanAmount) {
+      return { 
+        isValid: false, 
+        error: `Loan amount cannot exceed 12 times your monthly income (Max: ₹${maxLoanAmount.toLocaleString('en-IN')})` 
+      };
+    }
+    
+    if (amount < 50000) {
+      return {
+        isValid: false,
+        error: `Minimum loan amount is ₹50,000`
+      };
+    }
   }
   
   return { isValid: true };

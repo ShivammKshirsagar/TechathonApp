@@ -39,47 +39,51 @@ export const useLoanFlow = () => {
     if (isInitialized) return;
     
     const initializeFlow = () => {
-      // Add welcome message
-      const welcomeMessage: Message = {
-        id: `bot-${Date.now()}`,
-        type: 'bot',
-        content: "Welcome to XYZ Finance! 👋\n\nI'm here to help you get a personal loan quickly and easily.\n\nLet's get started!",
-        timestamp: new Date().toISOString()
-      };
-      dispatch({ type: 'ADD_MESSAGE', payload: welcomeMessage });
+      // First, clear any existing messages
+      dispatch({ type: 'CLEAR_MESSAGES' });
       
-      // Add employment type question after a short delay
+      // Set the initial step
+      dispatch({ 
+        type: 'SET_STEP', 
+        payload: ConversationStep.EMPLOYMENT_TYPE 
+      });
+      
+      // Add welcome message with a unique ID based on timestamp
       setTimeout(() => {
-        const employmentMessage: Message = {
-          id: `bot-${Date.now()}`,
+        const welcomeMessage: Message = {
+          id: `welcome-${Date.now()}`,
           type: 'bot',
-          content: "First, let me know your employment type:",
+          content: "Welcome to XYZ Finance! 👋\n\nI'm here to help you get a personal loan quickly and easily.\n\nLet's get started!",
           timestamp: new Date().toISOString()
         };
-        dispatch({ type: 'ADD_MESSAGE', payload: employmentMessage });
-        dispatch({ type: 'SET_STEP', payload: ConversationStep.EMPLOYMENT_TYPE });
-      }, 500);
+        
+        dispatch({ type: 'ADD_MESSAGE', payload: welcomeMessage });
+        
+        // Add employment message after a delay
+        setTimeout(() => {
+          const employmentMessage: Message = {
+            id: `employment-${Date.now()}`,
+            type: 'bot',
+            content: "First, let me know your employment type:",
+            timestamp: new Date().toISOString()
+          };
+          
+          dispatch({ type: 'ADD_MESSAGE', payload: employmentMessage });
+        }, 500);
+      }, 0);
     };
     
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Only load if we have messages and we're not at WELCOME step
-        if (parsed.messages && parsed.messages.length > 0 && parsed.currentStep !== ConversationStep.WELCOME) {
-          dispatch({ type: 'LOAD_STATE', payload: parsed });
-        } else {
-          // Initialize fresh if no messages or stuck at WELCOME
-          initializeFlow();
-        }
-      } else {
-        // No saved state, initialize fresh
-        initializeFlow();
-      }
+      // Clear any existing state to prevent duplicates
+      localStorage.removeItem(STORAGE_KEY);
+      
+      // Always initialize a fresh flow
+      initializeFlow();
+      
       setIsInitialized(true);
     } catch (error) {
       console.error('Failed to load state:', error);
-      // Initialize anyway if there's an error
+      // Initialize as new user if there's an error
       initializeFlow();
       setIsInitialized(true);
     }
@@ -94,10 +98,18 @@ export const useLoanFlow = () => {
     }
   }, [state]);
 
-  // Add message to chat
+  // Add message to chat with duplicate prevention
   const addMessage = useCallback((message: Message) => {
-    dispatch({ type: 'ADD_MESSAGE', payload: message });
-  }, []);
+    // Prevent adding duplicate messages with the same content within 2 seconds
+    const isDuplicate = state.messages.some(
+      msg => msg.content === message.content && 
+             Date.now() - new Date(msg.timestamp).getTime() < 2000
+    );
+    
+    if (!isDuplicate) {
+      dispatch({ type: 'ADD_MESSAGE', payload: message });
+    }
+  }, [state.messages]);
 
   const addBotMessage = useCallback((content: string, metadata?: Message['metadata']) => {
     const message: Message = {
@@ -155,8 +167,9 @@ export const useLoanFlow = () => {
     dispatch({ type: 'SET_MONTHLY_INCOME', payload: incomeNum });
     addUserMessage(`₹${incomeNum.toLocaleString('en-IN')}`);
     moveToNextStep();
+    const maxLoanAmount = incomeNum * 12; // 12x monthly income as max loan
     setTimeout(() => {
-      addBotMessage("How much would you like to borrow? (in ₹)");
+      addBotMessage(`How much would you like to borrow? (in ₹)\n\n*Maximum loan amount: ₹${maxLoanAmount.toLocaleString('en-IN')} (12x your monthly income)*`);
     }, 500);
     return true;
   }, [addUserMessage, moveToNextStep, addBotMessage]);

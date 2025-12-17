@@ -32,6 +32,12 @@ export const loanFlowReducer = (
       };
     }
 
+    case 'CLEAR_MESSAGES':
+      return {
+        ...state,
+        messages: []
+      };
+
     case 'ADD_MESSAGE':
       return {
         ...state,

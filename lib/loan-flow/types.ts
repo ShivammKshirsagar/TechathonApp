@@ -159,7 +159,8 @@ export type LoanFlowAction =
   | { type: 'SET_PROCESSING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | undefined }
   | { type: 'RESET_FLOW' }
-  | { type: 'LOAD_STATE'; payload: LoanFlowState };
+  | { type: 'LOAD_STATE'; payload: LoanFlowState }
+  | { type: 'CLEAR_MESSAGES' };
 
 // Initial document state
 export const initialDocumentState: DocumentFile = {

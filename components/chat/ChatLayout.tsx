@@ -9,20 +9,22 @@ interface ChatLayoutProps {
 
 export default function ChatLayout({ children, sidebar, onSendMessage, isLoading }: ChatLayoutProps) {
   return (
-    <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)]">
+    <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)] relative">
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900">
+      <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6 pb-24">
           <div className="max-w-4xl mx-auto">
             {children}
           </div>
         </div>
-        <MessageInput onSend={onSendMessage} isLoading={isLoading} />
+        <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+          <MessageInput onSend={onSendMessage} isLoading={isLoading} />
+        </div>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar - Sticky container */}
       {sidebar && (
-        <div className="lg:w-1/3 bg-gray-100 dark:bg-gray-800 p-6 overflow-y-auto">
+        <div className="lg:w-1/3 bg-gray-100 dark:bg-gray-800 p-6 overflow-y-auto sticky top-0 h-[calc(100vh-64px)]">
           {sidebar}
         </div>
       )}

@@ -1,24 +1,64 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Wallet, TrendingUp, Receipt, CreditCard } from 'lucide-react';
+import { ArrowLeft, Wallet, TrendingUp, Receipt, CreditCard, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import AppShell from '@/components/layout/AppShell';
 import UserOverviewCard from '@/components/profile/UserOverviewCard';
 import EligibilityCard from '@/components/profile/EligibilityCard';
 import DocumentStatusCard from '@/components/profile/DocumentStatusCard';
+import { toast } from 'sonner';
 
 export default function ProfilePage() {
   const router = useRouter();
 
-  // Mock user data
-  const userData = {
+  const [isApplying, setIsApplying] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Load user data from localStorage if available
+  const getUserData = () => {
+    if (typeof window === 'undefined') return null;
+    const savedData = localStorage.getItem('userData');
+    return savedData ? JSON.parse(savedData) : null;
+  };
+
+  // Mock user data with fallback to default if not in localStorage
+  const defaultUserData = {
     name: 'Ananya Sharma',
     customerId: 'CUST-2024-789456',
     phone: '+91 98765 43210',
     email: 'ananya.sharma@email.com',
     city: 'Mumbai, Maharashtra',
     kycStatus: 'Verified' as const,
-    lastUpdated: 'December 7, 2024 at 3:45 PM'
+    lastUpdated: new Date().toLocaleString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    })
+  };
+
+  const userData = getUserData() || defaultUserData;
+
+  const handleApplyForLoan = () => {
+    setIsApplying(true);
+    // Simulate API call
+    setTimeout(() => {
+      router.push('/');
+      toast.success('Redirecting to loan application...');
+      setIsApplying(false);
+    }, 1000);
+  };
+
+  const handleUpdateDocuments = () => {
+    setIsUpdating(true);
+    // Simulate document update
+    setTimeout(() => {
+      toast.success('Document update request received. You will be notified once processed.');
+      setIsUpdating(false);
+    }, 1500);
   };
 
   const eligibilityData = [
@@ -122,11 +162,29 @@ export default function ProfilePage() {
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-4">
-            <button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors">
-              Apply for New Loan
+            <button 
+              onClick={handleApplyForLoan}
+              disabled={isApplying}
+              className={`flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors ${isApplying ? 'opacity-75 cursor-not-allowed' : ''}`}
+            >
+              {isApplying ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Processing...
+                </>
+              ) : 'Apply for New Loan'}
             </button>
-            <button className="flex-1 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-semibold py-3 px-6 rounded-xl border border-gray-200 dark:border-gray-700 transition-colors">
-              Update Documents
+            <button 
+              onClick={handleUpdateDocuments}
+              disabled={isUpdating}
+              className={`flex-1 flex items-center justify-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-semibold py-3 px-6 rounded-xl border border-gray-200 dark:border-gray-700 transition-colors ${isUpdating ? 'opacity-75 cursor-not-allowed' : ''}`}
+            >
+              {isUpdating ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Updating...
+                </>
+              ) : 'Update Documents'}
             </button>
           </div>
         </div>
