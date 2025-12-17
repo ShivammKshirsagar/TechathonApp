@@ -14,6 +14,7 @@ import { LoanOfferCard } from '@/components/chat/LoanOfferCard';
 import { DocumentUploadModal } from '@/components/upload/DocumentUploadModal';
 import { SanctionLetterModal } from '@/components/sanction/SanctionLetterModal';
 import { generateSanctionLetterData, processApproval } from '@/lib/loan-flow/mockServices';
+import { conversationSteps } from '@/lib/loan-flow/conversationSteps';
 
 export default function HomePage() {
   const {
@@ -110,9 +111,13 @@ export default function HomePage() {
               // Move to approval success step
               dispatch({ type: 'SET_STEP', payload: ConversationStep.APPROVAL_SUCCESS });
 
-              setTimeout(() => {
-                addBotMessage("🎊 Congratulations! Your loan has been approved!\n\nYour sanction letter is ready.");
-              }, 1000);
+              // Get the approval success message from conversationSteps
+              const approvalSuccessMessage = conversationSteps[ConversationStep.APPROVAL_SUCCESS].botMessage;
+              const message = typeof approvalSuccessMessage === 'function' 
+                ? approvalSuccessMessage() 
+                : approvalSuccessMessage;
+                
+              addBotMessage(message);
             }
           }, 1000);
         } else {

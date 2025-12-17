@@ -152,7 +152,7 @@ export const conversationSteps: Record<ConversationStep, StepConfig> = {
 
   [ConversationStep.APPROVAL_SUCCESS]: {
     step: ConversationStep.APPROVAL_SUCCESS,
-    botMessage: "🎊 Congratulations! Your loan has been approved!\n\nYour sanction letter is ready.",
+    botMessage: (data?: any) => `🙏 Thank you for choosing XYZ Finance! 🙏\n\nWe truly appreciate your trust in our services.\n\n🎊 Congratulations! Your loan has been approved!\n\nYour sanction letter is ready.`,
     inputType: 'buttons',
     options: ['View Sanction Letter', 'Download PDF'],
     nextStep: ConversationStep.COMPLETE
@@ -160,7 +160,21 @@ export const conversationSteps: Record<ConversationStep, StepConfig> = {
 
   [ConversationStep.COMPLETE]: {
     step: ConversationStep.COMPLETE,
-    botMessage: "Thank you for choosing XYZ Finance!\n\nYour loan will be disbursed within 24 hours.\n\nIs there anything else I can help you with?",
+    botMessage: (data?: any) => `🎉 *Thank you for choosing XYZ Finance!* 🎉
+
+Your loan application has been successfully processed and approved! Here's what happens next:
+
+• Your loan will be disbursed within 24 hours
+• You'll receive an SMS and email confirmation shortly
+• The amount will be credited to your registered bank account
+
+🔹 *Important:* Please check your email for the loan agreement and keep it for future reference.
+
+Thank you for trusting XYZ Finance with your financial needs. We're honored to be part of your journey!
+
+For any queries, please contact our 24/7 customer support at 1800-123-4567 or email support@xyzfinance.com
+
+*Team XYZ Finance*`,
     inputType: 'none'
   }
 };
