@@ -104,6 +104,11 @@ export default function HomePage() {
             dispatch({ type: 'SET_APPROVAL_STATUS', payload: approval });
 
             if (approval === 'approved') {
+              // Acknowledgement after successful verification of salary slip and EMI check
+              addBotMessage(
+                'Great! Your salary slip has been analysed and your Loan EMI does not exceed 50% of your monthly salary!'
+              );
+
               // Generate sanction letter using captured values
               const sanctionLetter = generateSanctionLetterData(fullName, loanOffer);
               dispatch({ type: 'GENERATE_SANCTION_LETTER', payload: sanctionLetter });

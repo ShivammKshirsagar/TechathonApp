@@ -10,6 +10,7 @@ export default function UploadSalarySlipPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [ackMessage, setAckMessage] = useState<string | null>(null);
 
   const extractionData = {
     netSalary: '₹ 78,450.00',
@@ -22,6 +23,7 @@ export default function UploadSalarySlipPage() {
     setIsProcessing(true);
     setProgress(0);
     setIsComplete(false);
+    setAckMessage(null);
 
     // Simulate progress
     const interval = setInterval(() => {
@@ -30,6 +32,9 @@ export default function UploadSalarySlipPage() {
           clearInterval(interval);
           setIsProcessing(false);
           setIsComplete(true);
+          setAckMessage(
+            'Great! Your salary slip has been analysed and your Loan EMI is within 50% of your monthly net salary based on the extracted data.'
+          );
           return 100;
         }
         return prev + 5;
@@ -81,6 +86,11 @@ export default function UploadSalarySlipPage() {
               isProcessing={isProcessing}
               progress={progress}
             />
+            {ackMessage && (
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800 dark:border-green-700 dark:bg-green-900/20 dark:text-green-200">
+                {ackMessage}
+              </div>
+            )}
           </div>
 
           {/* Right: Extraction Panel */}
