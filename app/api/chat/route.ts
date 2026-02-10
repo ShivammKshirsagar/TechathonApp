@@ -1,7 +1,9 @@
   // app/api/chat/route.ts
   import { NextResponse } from 'next/server';
 
-  const N8N_WEBHOOK_URL = 'http://127.0.0.1:5678/webhook/bc1d8d34-888d-4c5c-9d6f-190950845cc2';
+  export const runtime = 'nodejs';
+
+  const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
   export async function POST(request: Request) {
     try {
@@ -16,53 +18,38 @@
         sessionId: sessionId,  // Root level for easy access
       };
       
-      console.log('API Route: Forwarding to n8n:', payload);
+      console.log('API Route: Forwarding to backend:', payload);
       console.log('Session ID being sent:', sessionId);
       
-      // Forward request to n8n webhook
-      const response = await fetch(N8N_WEBHOOK_URL, {
+      // Forward request to backend (streaming)
+      const response = await fetch(`${BACKEND_URL}/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          message: body.message || body.text || body.input || '',
+          session_id: sessionId,
+          device_id: body.deviceId,
+          ip_address: body.ipAddress,
+        }),
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         const errorText = await response.text();
-        console.error('n8n error response:', errorText);
-        throw new Error(`n8n responded with ${response.status}: ${errorText}`);
+        console.error('Backend error response:', errorText);
+        throw new Error(`Backend responded with ${response.status}: ${errorText}`);
       }
 
-      // Check if response is JSON
-      const contentType = response.headers.get('content-type');
-      let data;
-      
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        // If not JSON, try to parse as text
-        const textResponse = await response.text();
-        console.log('n8n non-JSON response:', textResponse);
-        
-        // Try to parse as JSON anyway
-        try {
-          data = JSON.parse(textResponse);
-        } catch {
-          // If parsing fails, wrap it in an object
-          data = { message: textResponse, text: textResponse, response: textResponse };
-        }
-      }
-      
-      console.log('API Route: Received from n8n:', data);
-      
-      // Include sessionId in response
-      const responseData = {
-        ...data,
-        sessionId: sessionId,
-      };
-      
-      return NextResponse.json(responseData);
+      return new NextResponse(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Session-Id': sessionId,
+        },
+      });
 
     } catch (error) {
       console.error('API Route Error:', error);
@@ -71,7 +58,7 @@
       
       return NextResponse.json(
         { 
-          error: 'Error communicating with automation server.',
+          error: 'Error communicating with backend server.',
           details: errorMessage 
         },
         { status: 500 }

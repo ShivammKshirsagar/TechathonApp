@@ -48,7 +48,7 @@ export const useDocumentUpload = ({ documents, dispatch }: UseDocumentUploadProp
 
     try {
       // Upload file with progress tracking
-      const { url, base64 } = await uploadFile(file, (progress) => {
+      const { url, base64 } = await uploadFile(file, docType, (progress) => {
         dispatch({
           type: 'UPDATE_DOCUMENT_PROGRESS',
           payload: { docType, progress }

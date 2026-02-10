@@ -28,7 +28,7 @@ export default function ChatBubble({
           isUser 
             ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tr-sm' 
             : 'bg-blue-900 dark:bg-blue-800 text-white rounded-2xl rounded-tl-sm'
-        } px-5 py-4 inline-block max-w-lg`}>
+        } px-5 py-4 inline-block max-w-lg whitespace-pre-wrap`}>
           {isLoading ? (
             <div className="flex gap-1">
               <span className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>

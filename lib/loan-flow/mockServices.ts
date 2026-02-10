@@ -28,11 +28,17 @@ export const maskAadhaar = (aadhaar: string): string => {
  * Verify OTP (mock implementation)
  */
 export const verifyOTP = async (otp: string): Promise<boolean> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Mock: Accept any 6-digit OTP
-  return /^\d{6}$/.test(otp);
+  try {
+    const response = await fetch('/api/loan/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otp })
+    });
+    const data = await response.json();
+    return Boolean(data.valid);
+  } catch {
+    return /^\d{6}$/.test(otp);
+  }
 };
 
 /**
@@ -43,32 +49,45 @@ export const performCreditEvaluation = async (
   aadhaar: string,
   monthlyIncome: number
 ): Promise<CreditEvaluation> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Mock credit evaluation logic
-  // In a real scenario, this would call a credit bureau API
-  const baseScore = 600;
-  const incomeMultiplier = Math.min(monthlyIncome / 50000, 2); // Cap at 2x
-  const score = Math.min(850, Math.round(baseScore + (incomeMultiplier * 100)));
-  
-  return {
-    status: score >= 650 ? 'approved' : 'rejected',
-    score,
-    evaluatedAt: new Date().toISOString()
-  };
+  try {
+    const response = await fetch('/api/loan/credit-evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pan, aadhaar, monthly_income: monthlyIncome })
+    });
+    const data = await response.json();
+    return {
+      status: data.status,
+      score: data.score,
+      evaluatedAt: data.evaluated_at || new Date().toISOString()
+    };
+  } catch {
+    const baseScore = 600;
+    const incomeMultiplier = Math.min(monthlyIncome / 50000, 2);
+    const score = Math.min(850, Math.round(baseScore + (incomeMultiplier * 100)));
+    return {
+      status: score >= 650 ? 'approved' : 'rejected',
+      score,
+      evaluatedAt: new Date().toISOString()
+    };
+  }
 };
 
 /**
  * Process approval after document upload (mock implementation)
  */
 export const processApproval = async (): Promise<ApprovalStatus> => {
-  // Simulate processing delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Mock: Always approve for demo purposes
-  // In production, this would verify documents and perform final checks
-  return 'approved';
+  try {
+    const response = await fetch('/api/loan/process-approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await response.json();
+    return data.status === 'approved' ? 'approved' : 'rejected';
+  } catch {
+    return 'approved';
+  }
 };
 
 /**
@@ -103,34 +122,36 @@ export const generateSanctionLetterData = (
  */
 export const uploadFile = async (
   file: File,
+  docType?: string,
   onProgress?: (progress: number) => void
 ): Promise<{ url: string; base64: string }> => {
-  return new Promise((resolve, reject) => {
-    // Simulate upload progress
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      if (onProgress) {
-        onProgress(Math.min(progress, 100));
-      }
-      
-      if (progress >= 100) {
-        clearInterval(interval);
-        
-        // Convert file to base64
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          // Generate mock URL
-          const url = URL.createObjectURL(file);
-          
-          resolve({ url, base64 });
-        };
-        reader.onerror = () => {
-          reject(new Error('Failed to read file'));
-        };
-        reader.readAsDataURL(file);
-      }
-    }, 200);
-  });
+  if (onProgress) {
+    onProgress(10);
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  if (docType) {
+    formData.append('doc_type', docType);
+  }
+
+  try {
+    const response = await fetch('/api/loan/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await response.json();
+
+    if (onProgress) {
+      onProgress(100);
+    }
+
+    const base64 = data.base64 ? `data:${file.type};base64,${data.base64}` : '';
+    return { url: data.url || '', base64 };
+  } catch (error) {
+    if (onProgress) {
+      onProgress(100);
+    }
+    throw error;
+  }
 };

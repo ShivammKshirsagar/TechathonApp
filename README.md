@@ -9,12 +9,20 @@ AI-powered loan application system built with Next.js, TypeScript, and Tailwind 
 npm install
 ```
 
-2. Run the development server:
+2. Run the backend (new):
+```bash
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r backend/requirements.txt
+uvicorn app.main:app --reload --port 8000 --app-dir backend
+```
+
+3. Run the development server:
 ```bash
 npm run dev
 ```
 
-3. Open [http://localhost:3000](http://localhost:3000) in your browser.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Project Structure
 
@@ -22,13 +30,15 @@ npm run dev
 - `/components` - React components organized by feature
 - `/styles` - Global styles and Tailwind configuration
 - `/providers` - Context providers (Theme, etc.)
+- `/backend` - FastAPI + LangGraph backend
 
 ## Features
 
 - Chat-based loan application interface
+- Agent-driven conversation flow
 - KYC verification
 - Underwriting decision engine
-- Salary slip upload and extraction
-- Loan approval summary
+- Salary slip upload and eligibility check
+- Sanction letter generation
 - Dark mode support
 

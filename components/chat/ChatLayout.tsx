@@ -5,9 +5,18 @@ interface ChatLayoutProps {
   sidebar?: React.ReactNode;
   onSendMessage?: (message: string) => void;
   isLoading?: boolean;
+  uploadRequired?: boolean;
+  onUpload?: (file: File) => void;
 }
 
-export default function ChatLayout({ children, sidebar, onSendMessage, isLoading }: ChatLayoutProps) {
+export default function ChatLayout({
+  children,
+  sidebar,
+  onSendMessage,
+  isLoading,
+  uploadRequired,
+  onUpload,
+}: ChatLayoutProps) {
   return (
     <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)] relative">
       {/* Chat Area */}
@@ -18,7 +27,12 @@ export default function ChatLayout({ children, sidebar, onSendMessage, isLoading
           </div>
         </div>
         <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
-          <MessageInput onSend={onSendMessage} isLoading={isLoading} />
+          <MessageInput
+            onSend={onSendMessage}
+            isLoading={isLoading}
+            uploadRequired={uploadRequired}
+            onUpload={onUpload}
+          />
         </div>
       </div>
 
