@@ -1,28 +1,23 @@
-from pathlib import Path
-import base64
+# backend/app/services/storage_service.py
+import os
 import uuid
-
+from pathlib import Path
 from fastapi import UploadFile
 
-
-def ensure_dir(path: str) -> Path:
-    p = Path(path)
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 
-async def save_upload(upload_dir: str, file: UploadFile) -> dict:
-    target_dir = ensure_dir(upload_dir)
-    extension = Path(file.filename or "").suffix
-    filename = f"{uuid.uuid4().hex}{extension}"
-    filepath = target_dir / filename
-
+async def save_upload_file(file: UploadFile, thread_id: str) -> str:
+    """Securely save uploaded file with validation"""
+    
+    # Sanitize filename
+    safe_filename = f"{thread_id}_{uuid.uuid4().hex[:8]}_{file.filename}"
+    file_path = UPLOAD_DIR / safe_filename
+    
+    # Save
     content = await file.read()
-    filepath.write_bytes(content)
-    encoded = base64.b64encode(content).decode("utf-8")
-
-    return {
-        "path": str(filepath),
-        "filename": file.filename,
-        "base64": encoded,
-    }
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    return str(file_path.absolute())

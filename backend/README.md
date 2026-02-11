@@ -29,3 +29,13 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password
 ```
+
+## LLM Configuration
+The agentic flow requires an OpenAI-compatible chat API:
+```
+LLM_API_KEY=your_api_key
+LLM_MODEL=gpt-4o-mini
+LLM_BASE_URL=https://api.openai.com
+LLM_TIMEOUT_S=30
+```
+You can also set `OPENAI_API_KEY` instead of `LLM_API_KEY`.

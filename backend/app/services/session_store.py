@@ -9,6 +9,7 @@ class SessionState:
     stage: str = "sales"
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     last_updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    history: list[dict[str, str]] = field(default_factory=list)
 
     # Collected data
     full_name: Optional[str] = None
