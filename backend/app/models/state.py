@@ -10,6 +10,13 @@ class LoanApplicationDetails(BaseModel):
     
     customer_id: Optional[str] = None
     customer_name: Optional[str] = Field(None, description="Full legal name")
+    email: Optional[str] = None
+    mobile: Optional[str] = None
+    pan: Optional[str] = None
+    aadhaar: Optional[str] = None
+    address: Optional[str] = None
+    kyc_consent: Optional[bool] = None
+    otp_verified: Optional[bool] = None
     
     # Loan details
     requested_amount: Optional[float] = Field(None, description="Amount requested")
@@ -35,6 +42,7 @@ class LoanApplicationDetails(BaseModel):
     salary_slip_path: Optional[str] = None
     salary_slip_data: Optional[Dict] = None
     bank_statement_path: Optional[str] = None
+    bank_statement_data: Optional[Dict] = None
     documents_requested: List[Dict[str, Any]] = Field(default_factory=list)  # {type, reason, requested_at}
     documents_received: List[Dict[str, Any]] = Field(default_factory=list)  # {type, path, received_at, verified}
     

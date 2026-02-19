@@ -13,6 +13,31 @@ from langchain_core.tools import BaseTool, tool
 from langchain_core.runnables import RunnableConfig
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.outputs import LLMResult
+from pydantic import BaseModel
+
+from app.settings import settings
+
+
+class LLMConfigError(RuntimeError):
+    """Raised when LLM configuration is missing or invalid."""
+
+
+class LLMServiceError(RuntimeError):
+    """Raised on LLM request failures or parsing errors."""
+
+
+def ensure_json_keys(payload: Any, keys: list[str]) -> Dict[str, Any]:
+    """Ensure payload is a dict and contains required keys."""
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise LLMServiceError("Failed to parse JSON response.") from exc
+    if not isinstance(payload, dict):
+        raise LLMServiceError("Expected a JSON object response.")
+    for key in keys:
+        payload.setdefault(key, None)
+    return payload
 
 
 class StreamingCallback(AsyncCallbackHandler):
@@ -30,6 +55,10 @@ class LLMConfig:
     api_key: str
     model: str
     base_url: Optional[str] = None
+    provider: str = "openai"
+    azure_endpoint: Optional[str] = None
+    azure_deployment: Optional[str] = None
+    azure_api_version: Optional[str] = None
     temperature: float = 0.2
     max_tokens: Optional[int] = None
     timeout: int = 30
@@ -37,13 +66,19 @@ class LLMConfig:
     @classmethod
     def from_env(cls) -> "LLMConfig":
         """Load from environment with fallbacks"""
+        provider = (settings.llm_provider or "openai").lower()
+        api_key = settings.llm_api_key or settings.openai_api_key or os.getenv("OPENAI_API_KEY", "")
         return cls(
-            api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY", ""),
-            model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
-            base_url=os.getenv("LLM_BASE_URL"),
-            temperature=float(os.getenv("LLM_TEMPERATURE", "0.2")),
-            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2000")) if os.getenv("LLM_MAX_TOKENS") else None,
-            timeout=int(os.getenv("LLM_TIMEOUT", "30")),
+            api_key=api_key,
+            model=settings.llm_model or os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            base_url=settings.llm_base_url or os.getenv("LLM_BASE_URL"),
+            provider=provider,
+            azure_endpoint=settings.azure_openai_endpoint or os.getenv("AZURE_OPENAI_ENDPOINT"),
+            azure_deployment=settings.azure_openai_deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+            azure_api_version=settings.azure_openai_api_version or os.getenv("AZURE_OPENAI_API_VERSION"),
+            temperature=float(settings.llm_temperature),
+            max_tokens=settings.llm_max_tokens,
+            timeout=int(settings.llm_timeout),
         )
 
 
@@ -62,6 +97,8 @@ class AgenticLLMService:
     def llm(self) -> ChatOpenAI:
         """Lazy initialization of LangChain LLM"""
         if self._llm is None:
+            if not self.config.api_key:
+                raise LLMConfigError("Missing LLM_API_KEY/OPENAI_API_KEY.")
             kwargs = {
                 "model": self.config.model,
                 "temperature": self.config.temperature,
@@ -69,10 +106,19 @@ class AgenticLLMService:
                 "timeout": self.config.timeout,
                 "api_key": self.config.api_key,
             }
-            if self.config.base_url:
-                kwargs["base_url"] = self.config.base_url
-            
-            self._llm = ChatOpenAI(**kwargs)
+            if self.config.provider == "azure":
+                if not self.config.azure_endpoint or not self.config.azure_deployment:
+                    raise LLMConfigError("Missing Azure OpenAI endpoint or deployment.")
+                self._llm = AzureChatOpenAI(
+                    azure_endpoint=self.config.azure_endpoint,
+                    azure_deployment=self.config.azure_deployment,
+                    api_version=self.config.azure_api_version or "2024-02-15-preview",
+                    **kwargs,
+                )
+            else:
+                if self.config.base_url:
+                    kwargs["base_url"] = self.config.base_url
+                self._llm = ChatOpenAI(**kwargs)
         return self._llm
     
     def bind_tools(self, tools: List[Callable]) -> "AgenticLLMService":
@@ -209,6 +255,25 @@ class AgenticLLMService:
             # Fallback: try to extract JSON
             json_content = self._extract_json(content)
             return output_schema(**json_content)
+
+    def chat_json(self, messages: List[Dict[str, str]], system_prompt: Optional[str] = None) -> Dict[str, Any]:
+        """Synchronous JSON chat helper for backward compatibility."""
+        langchain_messages = []
+        if system_prompt:
+            langchain_messages.append(SystemMessage(content=system_prompt))
+        for msg in messages:
+            if msg["role"] == "user":
+                langchain_messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                langchain_messages.append(AIMessage(content=msg["content"]))
+
+        try:
+            response = self.llm.invoke(langchain_messages)
+        except Exception as exc:
+            raise LLMServiceError(str(exc)) from exc
+
+        payload = self._extract_json(response.content or "")
+        return ensure_json_keys(payload, [])
     
     def _extract_json(self, text: str) -> Dict[str, Any]:
         """Extract JSON from text"""
@@ -249,71 +314,3 @@ def get_llm_service() -> AgenticLLMService:
 # Backward compatibility
 def get_llm() -> AgenticLLMService:
     return get_llm_service()
-
-
-# Tool definitions for lending
-@tool
-async def calculate_emi(principal: float, tenure_months: int, interest_rate: float = 12.5) -> str:
-    """Calculate EMI and total interest"""
-    r = interest_rate / (12 * 100)
-    emi = (principal * r * (1 + r)**tenure_months) / ((1 + r)**tenure_months - 1)
-    total_payment = emi * tenure_months
-    total_interest = total_payment - principal
-    
-    return json.dumps({
-        "emi": round(emi, 2),
-        "total_interest": round(total_interest, 2),
-        "total_payment": round(total_payment, 2),
-        "affordability_check": "Calculate EMI/monthly_income to check affordability"
-    })
-
-
-@tool
-async def analyze_purpose(purpose: str) -> str:
-    """Categorize loan purpose and assess risk profile"""
-    purpose_lower = purpose.lower()
-    
-    categories = {
-        "debt_consolidation": {"risk": "low", "urgency": "high", "typical_tenure": 36},
-        "medical": {"risk": "medium", "urgency": "critical", "typical_tenure": 12},
-        "wedding": {"risk": "medium", "urgency": "high", "typical_tenure": 24},
-        "education": {"risk": "low", "urgency": "medium", "typical_tenure": 60},
-        "business": {"risk": "high", "urgency": "medium", "typical_tenure": 48},
-        "home_renovation": {"risk": "low", "urgency": "low", "typical_tenure": 84},
-    }
-    
-    # Simple keyword matching - in production use LLM classification
-    for keyword, profile in categories.items():
-        if keyword.replace("_", " ") in purpose_lower or keyword in purpose_lower:
-            return json.dumps({
-                "category": keyword,
-                "risk_profile": profile["risk"],
-                "urgency": profile["urgency"],
-                "suggested_tenure": profile["typical_tenure"],
-                "reasoning": f"Detected {keyword} purpose"
-            })
-    
-    return json.dumps({
-        "category": "other",
-        "risk_profile": "medium",
-        "urgency": "medium",
-        "suggested_tenure": 36,
-        "reasoning": "General purpose loan"
-    })
-
-
-@tool
-async def check_affordability(monthly_income: float, existing_emis: float, proposed_emi: float) -> str:
-    """Check if loan is affordable using FOIR (Fixed Obligation to Income Ratio)"""
-    total_obligations = existing_emis + proposed_emi
-    foir = (total_obligations / monthly_income) * 100
-    
-    status = "comfortable" if foir < 30 else "stretched" if foir < 50 else "risky" if foir < 60 else "rejected"
-    
-    return json.dumps({
-        "foir_percentage": round(foir, 2),
-        "status": status,
-        "max_recommended_emi": round(monthly_income * 0.5, 2),
-        "available_for_new_emi": round(monthly_income * 0.5 - existing_emis, 2),
-        "recommendation": "Proceed" if status in ["comfortable", "stretched"] else "Reduce amount or tenure"
-    })

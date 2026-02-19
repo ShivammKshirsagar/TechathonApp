@@ -9,7 +9,7 @@ pydantic-settings==2.2.0
 langgraph==0.0.69
 langchain==0.2.0
 langchain-core==0.2.0
-langchain-openai==0.1.0
+langchain-openai==0.1.7
 langchain-community==0.2.0
 
 # Database
