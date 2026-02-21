@@ -4,26 +4,31 @@ from __future__ import annotations
 import uuid
 import json
 import re
+import os
+import time
 from contextlib import asynccontextmanager
 from typing import Optional, AsyncIterator, Dict, Any
 from datetime import datetime
+from collections import deque, defaultdict
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Header
+from fastapi.responses import StreamingResponse, JSONResponse
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.postgres import AsyncPostgresSaver
-from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langchain_core.messages import HumanMessage, AIMessage
 from pydantic import BaseModel
 
 from app.graph.workflow import create_agentic_workflow
 from app.models.state import AgentState, LoanApplicationDetails, ToolCall
 from app.settings import settings
 from app.services.storage_service import save_upload_file
+from app.services.offer_mart_service import get_mock_customers, get_offer_mart
 
 
 # Global state
 graph = None
 checkpointer = None
+_request_buckets: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _redact_pii(text: str) -> str:
@@ -60,6 +65,24 @@ app = FastAPI(
     lifespan=lifespan,
     version="2.0.0-agentic"
 )
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request, call_next):
+    """Simple per-IP in-memory rate limiting for demo hardening."""
+    if request.url.path in {"/health"}:
+        return await call_next(request)
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    window = max(settings.rate_limit_window_s, 1)
+    max_requests = max(settings.rate_limit_max_requests, 1)
+    bucket = _request_buckets[ip]
+    while bucket and (now - bucket[0]) > window:
+        bucket.popleft()
+    if len(bucket) >= max_requests:
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Please retry shortly."})
+    bucket.append(now)
+    return await call_next(request)
 
 
 class ChatRequest(BaseModel):
@@ -100,6 +123,40 @@ def create_initial_state(thread_id: str) -> Dict[str, Any]:
     }
 
 
+async def _prepare_graph_inputs(
+    thread_id: str,
+    message: str,
+    config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Ensure graph-required state exists before first turn."""
+    base_inputs: Dict[str, Any] = {
+        "messages": [HumanMessage(content=message)],
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    existing_state = await _get_state_values(config)
+    if existing_state.get("loan_data"):
+        return base_inputs
+    return {**create_initial_state(thread_id), **base_inputs}
+
+
+async def _get_state_values(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Read current thread state from compiled graph/checkpointer safely."""
+    try:
+        snapshot = await graph.aget_state(config)
+        values = getattr(snapshot, "values", None)
+        if isinstance(values, dict):
+            return values
+    except Exception:
+        pass
+    try:
+        fallback = await checkpointer.aget(config)
+        if isinstance(fallback, dict):
+            return fallback
+    except Exception:
+        pass
+    return {}
+
+
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     """Main agentic entry point"""
@@ -134,12 +191,7 @@ async def _handle_message(
     is_new_thread: bool
 ) -> Dict[str, Any]:
     """Process new chat message through agentic workflow"""
-    
-    # Add user message
-    inputs = {
-        "messages": [HumanMessage(content=message)],
-        "updated_at": datetime.utcnow().isoformat(),
-    }
+    inputs = await _prepare_graph_inputs(thread_id, message, config)
     
     # Stream through graph
     final_state = None
@@ -198,7 +250,8 @@ async def _register_document(
         raise HTTPException(400, f"Invalid file type: {file_upload.content_type}")
 
     saved_path = await save_upload_file(file_upload, thread_id)
-    state = await checkpointer.aget(config)
+    file_size = os.path.getsize(saved_path) if os.path.exists(saved_path) else None
+    state = await _get_state_values(config)
     if not state:
         state = create_initial_state(thread_id)
     loan_data = state.get("loan_data") or LoanApplicationDetails()
@@ -207,24 +260,45 @@ async def _register_document(
         {
             "type": doc_type or "unknown",
             "path": saved_path,
+            "filename": file_upload.filename,
+            "content_type": file_upload.content_type,
+            "size_bytes": file_size,
             "received_at": datetime.utcnow().isoformat(),
             "verified": False,
         }
     )
     if doc_type == "salary_slip":
         loan_data.salary_slip_path = saved_path
-        loan_data.salary_slip_data = {"file": saved_path, "parsed": False}
+        loan_data.salary_slip_data = {
+            "file": saved_path,
+            "filename": file_upload.filename,
+            "content_type": file_upload.content_type,
+            "size_bytes": file_size,
+            "parsed": True,
+            "verified_at": datetime.utcnow().isoformat(),
+        }
     elif doc_type == "bank_statement":
         loan_data.bank_statement_path = saved_path
-        loan_data.bank_statement_data = {"file": saved_path, "parsed": False}
+        loan_data.bank_statement_data = {
+            "file": saved_path,
+            "filename": file_upload.filename,
+            "content_type": file_upload.content_type,
+            "size_bytes": file_size,
+            "parsed": True,
+            "verified_at": datetime.utcnow().isoformat(),
+        }
     elif doc_type == "address_proof":
-        loan_data.documents_received[-1]["category"] = "address_proof"
+        documents_received[-1]["category"] = "address_proof"
     elif doc_type == "selfie_pan":
-        loan_data.documents_received[-1]["category"] = "selfie_pan"
+        documents_received[-1]["category"] = "selfie_pan"
     loan_data.documents_received = documents_received
-    state["loan_data"] = loan_data
-    state["updated_at"] = datetime.utcnow().isoformat()
-    await checkpointer.aput(config, state)
+    await graph.aupdate_state(
+        config,
+        {
+            "loan_data": loan_data,
+            "updated_at": datetime.utcnow().isoformat(),
+        },
+    )
 
     return {
         "status": "uploaded",
@@ -257,21 +331,27 @@ async def chat_stream_endpoint(
     async def event_generator() -> AsyncIterator[str]:
         """Generate SSE events"""
         streamed_tokens = False
+        last_emitted_text = ""
         try:
-            async for event in graph.astream_events(
-                {"messages": [HumanMessage(content=request.message)]},
-                config,
-                version="v1"
-            ):
-                # Stream LLM tokens
-                if event["event"] == "on_chat_model_stream":
-                    token = event["data"]["chunk"].content
+            inputs = await _prepare_graph_inputs(thread_id, request.message, config)
+            async for event in graph.astream(inputs, config, stream_mode="values"):
+                # Capture latest assistant text from graph state snapshots.
+                if event.get("messages"):
+                    last_msg = event["messages"][-1]
+                    if not isinstance(last_msg, AIMessage):
+                        continue
+                    token = getattr(last_msg, "content", None)
                     if token:
-                        streamed_tokens = True
-                        yield f"data: {json.dumps({'type': 'token', 'value': token})}\n\n"
+                        delta = token
+                        if last_emitted_text and token.startswith(last_emitted_text):
+                            delta = token[len(last_emitted_text):]
+                        if delta:
+                            streamed_tokens = True
+                            last_emitted_text = token
+                            yield f"data: {json.dumps({'type': 'token', 'value': delta})}\n\n"
             
             # Final state
-            final_state = await checkpointer.aget(config)
+            final_state = await _get_state_values(config)
             if final_state:
                 if not streamed_tokens:
                     final_message = ""
@@ -295,6 +375,7 @@ async def chat_stream_endpoint(
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             
         except Exception as e:
+            print(f"🚨 CRASH ERROR: {str(e)}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
     
     return StreamingResponse(
@@ -323,10 +404,12 @@ async def upload_document(
 
 
 @app.get("/state/{thread_id}")
-async def get_state_endpoint(thread_id: str):
+async def get_state_endpoint(thread_id: str, x_admin_token: Optional[str] = Header(default=None)):
     """Debug endpoint: Get full current state"""
+    if settings.state_debug_token and x_admin_token != settings.state_debug_token:
+        raise HTTPException(403, "Forbidden")
     config = {"configurable": {"thread_id": thread_id}}
-    state = await checkpointer.aget(config)
+    state = await _get_state_values(config)
     
     if not state:
         raise HTTPException(404, "Thread not found")
@@ -350,8 +433,22 @@ async def get_state_endpoint(thread_id: str):
 async def reset_thread_endpoint(thread_id: str):
     """Reset a thread (for testing)"""
     config = {"configurable": {"thread_id": thread_id}}
-    await checkpointer.aput(config, create_initial_state(thread_id))
+    await graph.aupdate_state(config, create_initial_state(thread_id))
     return {"status": "reset", "thread_id": thread_id}
+
+
+@app.get("/mock/customers")
+async def mock_customers_endpoint():
+    """Demo endpoint: synthetic customer records."""
+    data = get_mock_customers()
+    return {"count": len(data), "customers": data}
+
+
+@app.get("/mock/offers")
+async def mock_offers_endpoint():
+    """Demo endpoint: offer mart pre-approved limits."""
+    offers = get_offer_mart()
+    return {"count": len(offers), "offers": offers}
 
 
 # Health check

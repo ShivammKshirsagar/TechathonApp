@@ -1,7 +1,7 @@
 # backend/app/graph/workflow.py
 from typing import Literal
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.postgres import AsyncPostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.models.state import AgentState
 from app.graph.nodes import (
@@ -34,6 +34,7 @@ def create_agentic_workflow(checkpointer: AsyncPostgresSaver = None):
             "sales_agent": "sales_agent",
             "verification_agent": "verification_agent",
             "reflection": "reflection",
+            "END": END,
         }
     )
     

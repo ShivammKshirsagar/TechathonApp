@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import base64
 import uuid
+from pathlib import Path
 
 from app.models.state import LoanApplicationDetails
 from app.services.emi import calculate_emi
@@ -40,3 +41,57 @@ def generate_sanction_letter_data(loan_data: LoanApplicationDetails, interest_ra
         "applicantName": loan_data.customer_name or "Applicant",
         "loanDetails": loan_offer,
     }
+
+
+def generate_sanction_letter_pdf(loan_data: LoanApplicationDetails, interest_rate: float = 12.5) -> dict:
+    """Generate sanction letter PDF on disk and return metadata + path."""
+    data = generate_sanction_letter_data(loan_data, interest_rate=interest_rate)
+    sanctions_dir = Path("uploads") / "sanctions"
+    sanctions_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{data['referenceNumber']}.pdf"
+    file_path = sanctions_dir / filename
+
+    html = f"""
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body {{ font-family: Arial, sans-serif; margin: 24px; color: #222; }}
+          h1 {{ font-size: 22px; margin-bottom: 4px; }}
+          .muted {{ color: #666; font-size: 12px; margin-bottom: 16px; }}
+          table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
+          td, th {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+          th {{ background: #f3f3f3; }}
+        </style>
+      </head>
+      <body>
+        <h1>Personal Loan Sanction Letter</h1>
+        <div class="muted">Reference: {data['referenceNumber']} | Generated: {data['generatedAt']}</div>
+        <p>Dear {data['applicantName']},</p>
+        <p>Your personal loan application is approved subject to standard terms below.</p>
+        <table>
+          <tr><th>Loan Amount</th><td>INR {data['loanDetails']['amount']}</td></tr>
+          <tr><th>Interest Rate</th><td>{data['loanDetails']['interestRate']}%</td></tr>
+          <tr><th>Tenure (months)</th><td>{data['loanDetails']['tenure']}</td></tr>
+          <tr><th>Monthly EMI</th><td>INR {data['loanDetails']['emi']}</td></tr>
+          <tr><th>Total Interest</th><td>INR {data['loanDetails']['totalInterest']}</td></tr>
+          <tr><th>Total Payable</th><td>INR {data['loanDetails']['totalPayable']}</td></tr>
+          <tr><th>Valid Until</th><td>{data['validUntil']}</td></tr>
+        </table>
+      </body>
+    </html>
+    """
+
+    try:
+        from weasyprint import HTML  # lazy import
+
+        HTML(string=html).write_pdf(str(file_path))
+        data["pdfPath"] = str(file_path.absolute())
+        return data
+    except Exception:
+        # Fallback if PDF generation fails in local environment.
+        txt_fallback = sanctions_dir / f"{data['referenceNumber']}.txt"
+        txt_fallback.write_text(html, encoding="utf-8")
+        data["pdfPath"] = str(txt_fallback.absolute())
+        data["pdfFallback"] = True
+        return data

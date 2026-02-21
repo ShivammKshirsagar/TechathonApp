@@ -14,7 +14,7 @@ npm install
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r backend/requirements.txt
-uvicorn app.main:app --reload --port 8000 --app-dir backend
+uvicorn app.main:app --reload --reload-dir backend --port 8000 --app-dir backend
 ```
 
 3. Run the development server:

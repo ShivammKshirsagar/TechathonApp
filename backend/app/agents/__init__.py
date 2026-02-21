@@ -1,7 +1,6 @@
-__all__ = [
-    "master_agent",
-    "sales_agent",
-    "verification_agent",
-    "underwriting_agent",
-    "sanction_agent",
-]
+"""Deprecated legacy SessionState agents.
+
+LangGraph nodes under ``app.graph`` are the only supported runtime flow.
+"""
+
+__all__: list[str] = []

@@ -33,6 +33,7 @@ class LoanApplicationDetails(BaseModel):
     
     # Credit profile
     credit_score: Optional[int] = Field(None, ge=300, le=900)
+    preapproved_limit: Optional[float] = Field(None, ge=0)
     credit_history_length: Optional[int] = None  # In months
     existing_emis: Optional[float] = Field(0, ge=0)
     dti_ratio: Optional[float] = Field(None, ge=0, le=100)

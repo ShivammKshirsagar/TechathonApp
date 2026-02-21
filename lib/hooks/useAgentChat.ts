@@ -48,7 +48,8 @@ export const useAgentChat = () => {
 
   const handleMeta = useCallback((meta: any) => {
     if (!meta) return;
-    if (meta.requires_upload) {
+    const requiresAction = meta.requires_action;
+    if (meta.requires_upload || (requiresAction && requiresAction.type === 'document_upload')) {
       setUploadRequired(true);
     }
     if (meta.sanction_letter) {
@@ -119,6 +120,9 @@ export const useAgentChat = () => {
             }
             if (parsed.type === 'meta') {
               handleMeta(parsed.value);
+            }
+            if (parsed.type === 'error') {
+              updateAgentMessage(agentId, () => parsed.message || 'Backend error while generating response.');
             }
           }
         }

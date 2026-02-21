@@ -1,5 +1,4 @@
 __all__ = [
-    "session_store",
     "credit_bureau",
     "emi",
     "fraud_service",

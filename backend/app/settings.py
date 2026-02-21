@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     )
 
     postgres_dsn: Optional[str] = Field(None, validation_alias="POSTGRES_DSN")
+    state_debug_token: Optional[str] = Field(None, validation_alias="STATE_DEBUG_TOKEN")
+    rate_limit_window_s: int = Field(60, validation_alias="RATE_LIMIT_WINDOW_S")
+    rate_limit_max_requests: int = Field(120, validation_alias="RATE_LIMIT_MAX_REQUESTS")
 
     model_config = SettingsConfigDict(
         env_file=".env",

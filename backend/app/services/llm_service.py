@@ -6,6 +6,7 @@ import json
 from typing import Any, Dict, List, Optional, AsyncIterator, Callable
 from dataclasses import dataclass
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
@@ -62,6 +63,19 @@ class LLMConfig:
     temperature: float = 0.2
     max_tokens: Optional[int] = None
     timeout: int = 30
+
+    @staticmethod
+    def _normalize_base_url(base_url: Optional[str], provider: str) -> Optional[str]:
+        """Normalize custom OpenAI-compatible URLs (e.g. Ollama) to include /v1."""
+        if not base_url:
+            return base_url
+        parsed = urlparse(base_url)
+        path = (parsed.path or "").rstrip("/")
+        if provider == "azure":
+            return base_url
+        if path in ("", "/"):
+            return f"{base_url.rstrip('/')}/v1"
+        return base_url
     
     @classmethod
     def from_env(cls) -> "LLMConfig":
@@ -71,7 +85,10 @@ class LLMConfig:
         return cls(
             api_key=api_key,
             model=settings.llm_model or os.getenv("LLM_MODEL", "gpt-4o-mini"),
-            base_url=settings.llm_base_url or os.getenv("LLM_BASE_URL"),
+            base_url=cls._normalize_base_url(
+                settings.llm_base_url or os.getenv("LLM_BASE_URL"),
+                provider,
+            ),
             provider=provider,
             azure_endpoint=settings.azure_openai_endpoint or os.getenv("AZURE_OPENAI_ENDPOINT"),
             azure_deployment=settings.azure_openai_deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT"),

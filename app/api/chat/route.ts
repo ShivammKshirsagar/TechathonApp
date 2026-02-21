@@ -9,17 +9,7 @@
     try {
       const body = await request.json();
       
-      // Ensure sessionId is always present at root level
       const sessionId = body.sessionId || `session-${Math.random().toString(36).substring(7)}`;
-      
-      // Prepare payload with sessionId at multiple levels for compatibility
-      const payload = {
-        ...body,
-        sessionId: sessionId,  // Root level for easy access
-      };
-      
-      console.log('API Route: Forwarding to backend:', payload);
-      console.log('Session ID being sent:', sessionId);
       
       // Forward request to backend (streaming)
       const response = await fetch(`${BACKEND_URL}/chat/stream`, {
@@ -29,6 +19,7 @@
         },
         body: JSON.stringify({
           message: body.message || body.text || body.input || '',
+          thread_id: sessionId,
           session_id: sessionId,
           device_id: body.deviceId,
           ip_address: body.ipAddress,
