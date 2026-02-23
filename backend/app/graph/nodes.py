@@ -649,10 +649,7 @@ async def verification_agent_node(state: AgentState) -> Dict[str, Any]:
     return {
         "messages": [
             AIMessage(
-                content=(
-                    f"Verification completed. Proceeding to underwriting."
-                    + (f" Your pre-approved limit is INR {int(loan_data.preapproved_limit)}." if loan_data.preapproved_limit else "")
-                )
+                content="Verification completed. Proceeding to underwriting."
             )
         ],
         "loan_data": loan_data,
@@ -763,7 +760,9 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
         t = doc.get("type")
         if t:
             docs_by_type[t] = doc
-    mandatory_docs = ["salary_slip", "bank_statement", "address_proof", "selfie_pan"]
+    mandatory_docs = ["bank_statement", "address_proof", "selfie_pan"]
+    if loan_data.employment_type == "salaried":
+        mandatory_docs.insert(0, "salary_slip")
 
     if credit_score < 700:
         return {
