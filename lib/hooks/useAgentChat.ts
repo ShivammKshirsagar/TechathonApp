@@ -18,6 +18,15 @@ const orderDocs = (docs: string[]): RequiredDocType[] => {
 };
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const CHAT_STATE_KEY = 'codeblitz-chat-state-v1';
+
+type PersistedChatState = {
+  messages?: AgentMessage[];
+  sanctionLetter?: SanctionLetter | null;
+  uploadRequired?: boolean;
+  requiredDocuments?: RequiredDocType[];
+  uploadedDocuments?: RequiredDocType[];
+};
 
 const getOrCreate = (key: string) => {
   if (typeof window === 'undefined') return '';
@@ -28,27 +37,63 @@ const getOrCreate = (key: string) => {
   return value;
 };
 
+const getDefaultMessages = (): AgentMessage[] => [
+  {
+    id: 'welcome-agent-message',
+    role: 'agent',
+    content:
+      "Hi! I'm your CodeBlitz loan advisor. Tell me how much you'd like to borrow and your preferred tenure.",
+  },
+];
+
+const readPersistedState = (): PersistedChatState | null => {
+  if (typeof window === 'undefined') return null;
+  const raw = localStorage.getItem(CHAT_STATE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PersistedChatState;
+  } catch {
+    return null;
+  }
+};
+
 export const useAgentChat = () => {
-  const [messages, setMessages] = useState<AgentMessage[]>([
-    {
-      id: createId(),
-      role: 'agent',
-      content:
-        "Hi! I'm your CodeBlitz loan advisor. Tell me how much you'd like to borrow and your preferred tenure.",
-    },
-  ]);
+  const [messages, setMessages] = useState<AgentMessage[]>(getDefaultMessages());
   const [isStreaming, setIsStreaming] = useState(false);
   const [uploadRequired, setUploadRequired] = useState(false);
   const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocType[]>([]);
   const [uploadedDocuments, setUploadedDocuments] = useState<RequiredDocType[]>([]);
   const [sanctionLetter, setSanctionLetter] = useState<SanctionLetter | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
   const sessionIdRef = useRef<string>('');
   const deviceIdRef = useRef<string>('');
 
   useEffect(() => {
     sessionIdRef.current = getOrCreate('codeblitz-session-id');
     deviceIdRef.current = getOrCreate('codeblitz-device-id');
+
+    const persisted = readPersistedState();
+    if (persisted) {
+      if (persisted.messages?.length) setMessages(persisted.messages);
+      setSanctionLetter(persisted.sanctionLetter || null);
+      setUploadRequired(Boolean(persisted.uploadRequired));
+      setRequiredDocuments(persisted.requiredDocuments || []);
+      setUploadedDocuments(persisted.uploadedDocuments || []);
+    }
+    setIsHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isHydrated) return;
+    const payload: PersistedChatState = {
+      messages,
+      sanctionLetter,
+      uploadRequired,
+      requiredDocuments,
+      uploadedDocuments,
+    };
+    localStorage.setItem(CHAT_STATE_KEY, JSON.stringify(payload));
+  }, [messages, sanctionLetter, uploadRequired, requiredDocuments, uploadedDocuments, isHydrated]);
 
   const updateAgentMessage = useCallback((id: string, updater: (prev: string) => string) => {
     setMessages((prev) =>
