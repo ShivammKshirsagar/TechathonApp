@@ -131,8 +131,21 @@ export const uploadFile = async (
 
   const formData = new FormData();
   formData.append('file', file);
+  const docTypeMap: Record<string, string> = {
+    salarySlip: 'salary_slip',
+    bankStatement: 'bank_statement',
+    addressProof: 'address_proof',
+    selfie: 'selfie_pan',
+  };
   if (docType) {
-    formData.append('doc_type', docType);
+    formData.append('doc_type', docTypeMap[docType] || docType);
+  }
+  if (typeof window !== 'undefined') {
+    const threadId = localStorage.getItem('codeblitz-session-id') || '';
+    if (threadId) {
+      formData.append('thread_id', threadId);
+      formData.append('session_id', threadId);
+    }
   }
 
   try {

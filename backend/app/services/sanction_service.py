@@ -16,26 +16,29 @@ def generate_sanction_letter_data(loan_data: LoanApplicationDetails, interest_ra
     raw_hash = f"{reference_number}-{loan_data.customer_id or 'applicant'}-{now.isoformat()}".encode("utf-8")
     document_hash = base64.b64encode(raw_hash).decode("utf-8")[:32]
 
-    amount = loan_data.requested_amount or 0
-    tenure = loan_data.tenure_months or 0
+    amount = round(float(loan_data.requested_amount or 0), 2)
+    tenure = int(loan_data.tenure_months or 0)
     emi = calculate_emi(amount, interest_rate, tenure) if tenure else 0
-    total_payable = emi * tenure if tenure else amount
-    total_interest = max(total_payable - amount, 0)
+    emi_rounded = round(float(emi), 2)
+    total_payable = round((emi_rounded * tenure) if tenure else amount, 2)
+    total_interest = round(max(total_payable - amount, 0), 2)
 
     loan_offer = {
         "amount": amount,
         "interestRate": interest_rate,
-        "emi": round(emi, 2),
+        "emi": emi_rounded,
         "tenure": tenure,
         "processingFee": 0,
         "apr": interest_rate,
-        "totalInterest": round(total_interest, 2),
-        "totalPayable": round(total_payable, 2),
+        "totalInterest": total_interest,
+        "totalPayable": total_payable,
     }
 
     return {
         "referenceNumber": reference_number,
+        "referenceNo": reference_number,
         "generatedAt": now.isoformat(),
+        "date": now.date().isoformat(),
         "validUntil": valid_until.isoformat(),
         "documentHash": document_hash,
         "applicantName": loan_data.customer_name or "Applicant",

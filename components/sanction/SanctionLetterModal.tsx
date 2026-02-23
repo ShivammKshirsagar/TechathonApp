@@ -14,6 +14,7 @@ export const SanctionLetterModal: React.FC<SanctionLetterModalProps> = ({
   onClose,
   sanctionLetter
 }) => {
+  const displayReference = sanctionLetter.referenceNumber || sanctionLetter.referenceNo || '--';
   const handlePrint = () => {
     window.print();
   };
@@ -37,7 +38,7 @@ export const SanctionLetterModal: React.FC<SanctionLetterModalProps> = ({
           <div>
             <h2 className="text-2xl font-bold">Sanction Letter</h2>
             <p className="text-blue-100 text-sm">
-              Reference: {sanctionLetter.referenceNumber}
+              Reference: {displayReference}
             </p>
           </div>
           <button

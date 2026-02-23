@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import AppShell from '@/components/layout/AppShell';
 import ChatLayout from '@/components/chat/ChatLayout';
 import ChatBubble from '@/components/chat/ChatBubble';
@@ -13,11 +13,26 @@ export default function HomePage() {
     sendMessage,
     isStreaming,
     uploadRequired,
-    uploadSalarySlip,
+    requiredDocuments,
+    uploadedDocuments,
+    uploadDocument,
     sanctionLetter,
   } = useAgentChat();
 
   const [showSanctionModal, setShowSanctionModal] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, isStreaming]);
 
   return (
     <AppShell>
@@ -25,7 +40,10 @@ export default function HomePage() {
         onSendMessage={sendMessage}
         isLoading={isStreaming}
         uploadRequired={uploadRequired}
-        onUpload={uploadSalarySlip}
+        onUpload={uploadDocument}
+        requiredDocuments={requiredDocuments}
+        uploadedDocuments={uploadedDocuments}
+        scrollContainerRef={scrollContainerRef}
       >
         {messages.map((message) => (
           <ChatBubble
@@ -36,6 +54,7 @@ export default function HomePage() {
             isLoading={isStreaming && message.role === 'agent' && !message.content}
           />
         ))}
+        <div ref={endRef} />
 
         {sanctionLetter && (
           <div className="mt-6">

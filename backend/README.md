@@ -30,6 +30,8 @@ uvicorn app.main:app --reload --reload-dir backend --port 8000 --app-dir backend
 - If `requested_amount <= 2 x preapproved_limit`: request `salary_slip` and approve only if `EMI <= 50%` of monthly salary
 - Reject if `requested_amount > 2 x preapproved_limit`
 - Additional verification guard (demo realism): salary slip is required before any final approval is issued.
+- KYC/verification guard: final approval requires `salary_slip`, `bank_statement`, `address_proof`, and `selfie_pan` uploaded and marked verified.
+- PDF verification uses basic text extraction (`pypdf`) to match PAN/Aadhaar where applicable.
 
 ## Security
 Optional debug-state protection:

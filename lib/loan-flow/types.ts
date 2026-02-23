@@ -72,7 +72,9 @@ export interface LoanOffer {
 
 export interface SanctionLetter {
   referenceNumber: string;
+  referenceNo?: string;
   generatedAt: string;
+  date?: string;
   validUntil: string;
   documentHash: string;
   applicantName: string;

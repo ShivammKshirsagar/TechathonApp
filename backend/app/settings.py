@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     state_debug_token: Optional[str] = Field(None, validation_alias="STATE_DEBUG_TOKEN")
     rate_limit_window_s: int = Field(60, validation_alias="RATE_LIMIT_WINDOW_S")
     rate_limit_max_requests: int = Field(120, validation_alias="RATE_LIMIT_MAX_REQUESTS")
+    strict_document_verification: bool = Field(False, validation_alias="STRICT_DOCUMENT_VERIFICATION")
 
     model_config = SettingsConfigDict(
         env_file=".env",

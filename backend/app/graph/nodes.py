@@ -56,6 +56,19 @@ class SalesExtraction(BaseModel):
             return v
         return v
 
+    @field_validator("loan_purpose", "reply", mode="before")
+    @classmethod
+    def _coerce_text_like(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            if not v:
+                return None
+            v = v[0]
+        if isinstance(v, (int, float)):
+            return str(v)
+        return v
+
 
 class VerificationExtraction(BaseModel):
     full_name: Optional[str] = None
@@ -66,6 +79,36 @@ class VerificationExtraction(BaseModel):
     consent: Optional[bool] = None
     otp: Optional[str] = None
     reply: Optional[str] = None
+
+    @field_validator("full_name", "mobile", "email", "pan", "aadhaar", "otp", "reply", mode="before")
+    @classmethod
+    def _coerce_string_like(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            if not v:
+                return None
+            v = v[0]
+        if isinstance(v, (int, float)):
+            return str(v)
+        return v
+
+    @field_validator("consent", mode="before")
+    @classmethod
+    def _coerce_bool_like(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            if not v:
+                return None
+            v = v[0]
+        if isinstance(v, str):
+            lowered = v.strip().lower()
+            if lowered in {"yes", "y", "true", "1", "consent", "agree"}:
+                return True
+            if lowered in {"no", "n", "false", "0", "deny", "disagree"}:
+                return False
+        return v
 
 
 def _last_user_message(state: AgentState) -> str:
@@ -92,7 +135,7 @@ def _append_tool_call(state: AgentState, name: str, args: Dict[str, Any], result
 def _extract_number(text: str) -> Optional[float]:
     if not text:
         return None
-    match = re.search(r"(\d[\d,]*\.?\d*)", text.replace("₹", "").replace("rs", ""))
+    match = re.search(r"(\d[\d,]*\.?\d*)", text.replace("₹", "").replace("â‚¹", "").replace("rs", ""))
     if not match:
         return None
     try:
@@ -156,25 +199,78 @@ def _extract_mobile(text: str) -> Optional[str]:
     return match.group(0) if match else None
 
 
+def _extract_consent(text: str) -> Optional[bool]:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return None
+    yes_tokens = ["yes", "i consent", "consent", "agree", "approved", "ok", "okay", "yep", "sure"]
+    no_tokens = ["no", "i do not consent", "don't consent", "do not consent", "deny", "disagree"]
+    if any(token in lowered for token in no_tokens):
+        return False
+    if any(token in lowered for token in yes_tokens):
+        return True
+    return None
+
+
 def _build_plan(missing_fields: List[str]) -> List[str]:
     return [f"Collect {field.replace('_', ' ')}" for field in missing_fields]
+
+
+def _looks_like_income_context(text: str) -> bool:
+    lowered = (text or "").lower()
+    markers = ["income", "salary", "per month", "monthly", "take home", "take-home"]
+    return any(m in lowered for m in markers)
+
+
+def _looks_like_loan_amount_context(text: str) -> bool:
+    lowered = (text or "").lower()
+    markers = ["borrow", "loan amount", "need", "want", "amount", "loan", "finance"]
+    return any(m in lowered for m in markers)
 
 
 async def sales_agent_node(state: AgentState) -> Dict[str, Any]:
     loan_data: LoanApplicationDetails = state["loan_data"]
     user_message = _last_user_message(state)
+    dialogue_stage = state.get("dialogue_stage")
+    application_status = state.get("application_status")
+
+    loan_basics_complete = all(
+        [
+            loan_data.requested_amount,
+            loan_data.tenure_months,
+            loan_data.loan_purpose,
+            loan_data.employment_type,
+            loan_data.monthly_income,
+        ]
+    )
+    if loan_basics_complete and (dialogue_stage in {"verification", "underwriting", "closure", "rejected"} or application_status in {"awaiting_documents", "approved", "rejected"}):
+        # Sales node can only route to verification_agent/END in workflow edges.
+        # Verification node will fast-forward to underwriting when already verified.
+        next_step = "verification_agent"
+        return {
+            "messages": [],
+            "loan_data": loan_data,
+            "next_step": next_step,
+            "dialogue_stage": dialogue_stage or "verification",
+            "plan": state.get("plan", []),
+            "current_goal": state.get("current_goal") or "Continue current stage",
+            "interrupt_signal": state.get("interrupt_signal"),
+            "agent_thoughts": list(state.get("agent_thoughts", []))[-2:] + ["Sales stage already complete; skipping repeat transition."],
+            "tool_calls": list(state.get("tool_calls", [])),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
 
     missing = []
-    if not loan_data.employment_type:
-        missing.append("employment_type")
-    if not loan_data.monthly_income:
-        missing.append("monthly_income")
     if not loan_data.requested_amount:
         missing.append("requested_amount")
     if not loan_data.tenure_months:
         missing.append("tenure_months")
     if not loan_data.loan_purpose:
         missing.append("loan_purpose")
+    if not loan_data.employment_type:
+        missing.append("employment_type")
+    if not loan_data.monthly_income:
+        missing.append("monthly_income")
 
     extraction = None
     try:
@@ -191,15 +287,28 @@ async def sales_agent_node(state: AgentState) -> Dict[str, Any]:
         extraction = SalesExtraction()
 
     employment_type = extraction.employment_type or _extract_employment_type(user_message)
-    monthly_income = extraction.monthly_income or _extract_number(user_message)
-    requested_amount = extraction.requested_amount or None
+    monthly_income = extraction.monthly_income if (missing and missing[0] == "monthly_income") else None
+    requested_amount = extraction.requested_amount if (missing and missing[0] == "requested_amount") else None
     tenure_months = extraction.tenure_months or _extract_tenure_months(user_message)
     loan_purpose = extraction.loan_purpose
+    extracted_number = _extract_number(user_message)
 
-    if requested_amount is None and monthly_income and "borrow" in user_message.lower():
-        requested_amount = _extract_number(user_message)
-    if requested_amount is None and loan_data.requested_amount is None:
-        requested_amount = _extract_number(user_message)
+    if extracted_number is not None:
+        if _looks_like_income_context(user_message):
+            monthly_income = monthly_income or extracted_number
+        elif _looks_like_loan_amount_context(user_message):
+            requested_amount = requested_amount or extracted_number
+        elif missing and missing[0] == "requested_amount":
+            requested_amount = requested_amount or extracted_number
+        elif missing and missing[0] == "monthly_income":
+            monthly_income = monthly_income or extracted_number
+
+    if missing and missing[0] == "loan_purpose" and not loan_purpose:
+        candidate = (user_message or "").strip()
+        if candidate:
+            looks_like_numeric_only = bool(re.fullmatch(r"[\d,\.\s]+", candidate))
+            if not looks_like_numeric_only and not _extract_tenure_months(candidate) and not _extract_employment_type(candidate):
+                loan_purpose = candidate
 
     if employment_type:
         loan_data.employment_type = employment_type  # type: ignore[assignment]
@@ -213,31 +322,29 @@ async def sales_agent_node(state: AgentState) -> Dict[str, Any]:
         loan_data.loan_purpose = loan_purpose.strip()
 
     updated_missing = []
-    if not loan_data.employment_type:
-        updated_missing.append("employment_type")
-    if not loan_data.monthly_income:
-        updated_missing.append("monthly_income")
     if not loan_data.requested_amount:
         updated_missing.append("requested_amount")
     if not loan_data.tenure_months:
         updated_missing.append("tenure_months")
     if not loan_data.loan_purpose:
         updated_missing.append("loan_purpose")
+    if not loan_data.employment_type:
+        updated_missing.append("employment_type")
+    if not loan_data.monthly_income:
+        updated_missing.append("monthly_income")
 
-    reply = extraction.reply if extraction and extraction.reply else None
-    if not reply:
-        if updated_missing:
-            field = updated_missing[0]
-            prompts = {
-                "employment_type": "First, let me know your employment type (salaried, self-employed, freelancer, unemployed).",
-                "monthly_income": "What is your monthly income? (in ₹)",
-                "requested_amount": "How much would you like to borrow? (in ₹)",
-                "tenure_months": "Select your preferred loan tenure (in months).",
-                "loan_purpose": "What is the purpose of the loan?",
-            }
-            reply = prompts.get(field, "Could you share the next required detail?")
-        else:
-            reply = "Thanks! Moving on to verification."
+    if updated_missing:
+        field = updated_missing[0]
+        prompts = {
+            "requested_amount": "Hi! I am your Tata Capital loan advisor. How much would you like to borrow today? (in INR)",
+            "tenure_months": "Great. Over how many months would you like to repay that loan?",
+            "loan_purpose": "Got it. What is the main purpose of this loan? (Medical, Wedding, Home Renovation, etc.)",
+            "employment_type": "To check the best rate for you, what is your employment type? (salaried, self-employed, freelancer, unemployed)",
+            "monthly_income": "And what is your current monthly income? (in INR)",
+        }
+        reply = prompts.get(field, "Could you share the next required detail?")
+    else:
+        reply = "Thanks! Moving on to verification."
 
     tool_calls = list(state.get("tool_calls", []))
     if loan_data.loan_purpose:
@@ -310,6 +417,35 @@ async def sales_agent_node(state: AgentState) -> Dict[str, Any]:
 async def verification_agent_node(state: AgentState) -> Dict[str, Any]:
     loan_data: LoanApplicationDetails = state["loan_data"]
     user_message = _last_user_message(state)
+    existing_tool_calls = list(state.get("tool_calls", []))
+
+    # Avoid repeating verification narration on every document-upload turn.
+    # If KYC is already completed and we're in underwriting/doc collection, continue directly.
+    if (
+        state.get("dialogue_stage") == "underwriting"
+        or state.get("application_status") == "awaiting_documents"
+    ) and all(
+        [
+            loan_data.customer_name,
+            loan_data.mobile,
+            loan_data.email,
+            loan_data.pan,
+            loan_data.aadhaar,
+            loan_data.otp_verified is True,
+            loan_data.kyc_consent is True,
+        ]
+    ):
+        return {
+            "messages": [],
+            "loan_data": loan_data,
+            "next_step": "underwriting_agent",
+            "dialogue_stage": "underwriting",
+            "tool_calls": existing_tool_calls,
+            "plan": ["Continue underwriting checks"],
+            "current_goal": "Continue underwriting with latest documents",
+            "agent_thoughts": ["KYC already verified; skipping repeat verification."],
+            "updated_at": datetime.utcnow().isoformat(),
+        }
 
     extraction = None
     try:
@@ -319,7 +455,7 @@ async def verification_agent_node(state: AgentState) -> Dict[str, Any]:
             VerificationExtraction,
             system_prompt="Extract KYC details from the user's message. Return only provided values.",
         )
-    except (LLMConfigError, LLMServiceError):
+    except Exception:
         extraction = VerificationExtraction()
 
     if extraction.full_name:
@@ -334,6 +470,10 @@ async def verification_agent_node(state: AgentState) -> Dict[str, Any]:
         loan_data.aadhaar = extraction.aadhaar
     if extraction.consent is not None:
         loan_data.kyc_consent = extraction.consent
+    elif loan_data.kyc_consent is None:
+        inferred_consent = _extract_consent(user_message)
+        if inferred_consent is not None:
+            loan_data.kyc_consent = inferred_consent
     if extraction.otp:
         loan_data.otp_verified = True
     if not loan_data.otp_verified:
@@ -349,46 +489,39 @@ async def verification_agent_node(state: AgentState) -> Dict[str, Any]:
     if not loan_data.aadhaar:
         loan_data.aadhaar = _extract_aadhaar(user_message)
 
-    missing_fields = []
+    # Enforce exact collection order:
+    # full_name -> mobile -> otp -> email -> pan -> aadhaar -> consent
+    primary_missing = []
     if not loan_data.customer_name:
-        missing_fields.append("full_name")
+        primary_missing.append("full_name")
     if not loan_data.mobile:
-        missing_fields.append("mobile")
-    if not loan_data.email:
-        missing_fields.append("email")
-    if not loan_data.pan:
-        missing_fields.append("pan")
-    if not loan_data.aadhaar:
-        missing_fields.append("aadhaar")
+        primary_missing.append("mobile")
 
-    if missing_fields:
+    if primary_missing:
         prompts = {
-            "full_name": "Great! Now I need some personal details. What is your full name?",
-            "mobile": "Please enter your mobile number:",
-            "email": "What is your email address?",
-            "pan": "Please enter your PAN number:",
-            "aadhaar": "Please enter your Aadhaar number:",
+            "full_name": "Thanks! Let's get this processed. What is your full name?",
+            "mobile": "What is your mobile number?",
         }
-        prompt = prompts.get(missing_fields[0], "Please share the next required detail.")
+        prompt = prompts.get(primary_missing[0], "Please share the next required detail.")
         return {
             "messages": [AIMessage(content=prompt)],
             "loan_data": loan_data,
             "next_step": "END",
             "dialogue_stage": "verification",
-            "plan": _build_plan(missing_fields),
+            "plan": _build_plan(primary_missing),
             "interrupt_signal": {
                 "type": "verification_input_required",
                 "message": "More KYC details are required.",
-                "fields": missing_fields,
+                "fields": primary_missing,
             },
-            "current_goal": "Collect KYC details",
-            "agent_thoughts": [f"Missing: {', '.join(missing_fields)}"],
+            "current_goal": "Collect basic identity details",
+            "agent_thoughts": [f"Missing: {', '.join(primary_missing)}"],
             "updated_at": datetime.utcnow().isoformat(),
         }
 
     if loan_data.mobile and not loan_data.otp_verified:
         return {
-            "messages": [AIMessage(content=f"We've sent a 6-digit OTP to {loan_data.mobile}. Please enter it to verify:")],
+            "messages": [AIMessage(content=f"I've sent a 6-digit OTP to {loan_data.mobile}. Please enter it here.")],
             "loan_data": loan_data,
             "next_step": "END",
             "dialogue_stage": "verification",
@@ -398,11 +531,42 @@ async def verification_agent_node(state: AgentState) -> Dict[str, Any]:
             "updated_at": datetime.utcnow().isoformat(),
         }
 
+    secondary_missing = []
+    if not loan_data.email:
+        secondary_missing.append("email")
+    if not loan_data.pan:
+        secondary_missing.append("pan")
+    if not loan_data.aadhaar:
+        secondary_missing.append("aadhaar")
+
+    if secondary_missing:
+        prompts = {
+            "email": "What is your email address?",
+            "pan": "Please enter your PAN number.",
+            "aadhaar": "And your Aadhaar number.",
+        }
+        prompt = prompts.get(secondary_missing[0], "Please share the next required detail.")
+        return {
+            "messages": [AIMessage(content=prompt)],
+            "loan_data": loan_data,
+            "next_step": "END",
+            "dialogue_stage": "verification",
+            "plan": _build_plan(secondary_missing),
+            "interrupt_signal": {
+                "type": "verification_input_required",
+                "message": "More KYC details are required.",
+                "fields": secondary_missing,
+            },
+            "current_goal": "Collect detailed KYC fields",
+            "agent_thoughts": [f"Missing: {', '.join(secondary_missing)}"],
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+
     if loan_data.kyc_consent is None:
         return {
             "messages": [
                 AIMessage(
-                    content="Do you consent to KYC verification and credit bureau checks? This is required to process your loan application."
+                    content="Finally, do you consent to us running a quick KYC and credit bureau check to fetch your pre-approved offers?"
                 )
             ],
             "loan_data": loan_data,
@@ -494,6 +658,7 @@ async def verification_agent_node(state: AgentState) -> Dict[str, Any]:
         "loan_data": loan_data,
         "next_step": "underwriting_agent",
         "dialogue_stage": "underwriting",
+        "interrupt_signal": None,
         "tool_calls": tool_calls,
         "plan": ["Run underwriting checks"],
         "current_goal": "Underwriting decision",
@@ -593,8 +758,12 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
     requested_amount = float(loan_data.requested_amount or 0)
     credit_score = int(loan_data.credit_score or 0)
     preapproved_limit = float(loan_data.preapproved_limit or 0)
-    docs_received = {doc.get("type") for doc in loan_data.documents_received}
-    mandatory_docs = ["salary_slip"]
+    docs_by_type = {}
+    for doc in loan_data.documents_received:
+        t = doc.get("type")
+        if t:
+            docs_by_type[t] = doc
+    mandatory_docs = ["salary_slip", "bank_statement", "address_proof", "selfie_pan"]
 
     if credit_score < 700:
         return {
@@ -604,6 +773,7 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
             "dialogue_stage": "rejected",
             "application_status": "rejected",
             "rejection_reason": "Credit score below 700.",
+            "interrupt_signal": None,
             "tool_calls": tool_calls,
             "underwriting_reasoning": "Rejected as credit score is below 700.",
             "underwriting_decision": "reject",
@@ -620,6 +790,7 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
             "dialogue_stage": "rejected",
             "application_status": "rejected",
             "rejection_reason": "Pre-approved offer unavailable.",
+            "interrupt_signal": None,
             "tool_calls": tool_calls,
             "underwriting_reasoning": "Offer mart lookup did not return a pre-approved limit.",
             "underwriting_decision": "reject",
@@ -628,45 +799,16 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
             "updated_at": datetime.utcnow().isoformat(),
         }
 
-    if not set(mandatory_docs).issubset(docs_received):
-        missing_docs = [d for d in mandatory_docs if d not in docs_received]
-        loan_data.documents_requested = [
-            {
-                "type": doc,
-                "reason": "Mandatory income verification before final approval.",
-                "requested_at": datetime.utcnow().isoformat(),
-            }
-            for doc in missing_docs
-        ]
-        docs_human = ", ".join(missing_docs)
-        return {
-            "messages": [AIMessage(content=f"Before final decision, please upload: {docs_human}.")],
-            "loan_data": loan_data,
-            "next_step": "END",
-            "dialogue_stage": "underwriting",
-            "application_status": "awaiting_documents",
-            "interrupt_signal": {
-                "type": "document_upload",
-                "required_documents": missing_docs,
-                "message": f"Please upload required document(s): {docs_human}",
-            },
-            "tool_calls": tool_calls,
-            "current_goal": "Collect mandatory verification documents",
-            "agent_thoughts": [f"Waiting for mandatory docs: {docs_human}"],
-            "underwriting_decision": "request_documents",
-            "underwriting_confidence": 0.9,
-            "updated_at": datetime.utcnow().isoformat(),
-        }
-
     if requested_amount <= preapproved_limit:
         sanction_letter = generate_sanction_letter_pdf(loan_data)
         return {
-            "messages": [AIMessage(content="Great news! Your loan is approved within your pre-approved limit after document verification. Your sanction letter is ready.")],
+            "messages": [AIMessage(content="Great news! Your loan is approved within your pre-approved limit. Your sanction letter is ready.")],
             "loan_data": loan_data,
             "next_step": "END",
             "dialogue_stage": "closure",
             "application_status": "approved",
             "sanction_letter_path": sanction_letter,
+            "interrupt_signal": None,
             "underwriting_reasoning": "Requested amount is within pre-approved limit.",
             "underwriting_decision": "approve",
             "underwriting_confidence": 0.92,
@@ -676,22 +818,72 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
         }
 
     if requested_amount <= (2 * preapproved_limit):
+        missing_docs = [d for d in mandatory_docs if d not in docs_by_type]
+        unverified_docs = [
+            d for d in mandatory_docs
+            if d in docs_by_type and not bool(docs_by_type[d].get("verified"))
+        ]
+        if missing_docs or unverified_docs:
+            unverified_details = {}
+            for doc_type in unverified_docs:
+                verification = (docs_by_type.get(doc_type) or {}).get("verification") or {}
+                reason = verification.get("reason") if isinstance(verification, dict) else None
+                if reason:
+                    unverified_details[doc_type] = reason
+            requested_docs = list(dict.fromkeys(missing_docs + unverified_docs))
+            loan_data.documents_requested = [
+                {
+                    "type": doc,
+                    "reason": "Mandatory KYC/income verification before final approval.",
+                    "requested_at": datetime.utcnow().isoformat(),
+                }
+                for doc in requested_docs
+            ]
+            docs_human = ", ".join(requested_docs)
+            return {
+                "messages": [AIMessage(content=f"Before final decision, please upload or re-upload: {docs_human}.")],
+                "loan_data": loan_data,
+                "next_step": "END",
+                "dialogue_stage": "underwriting",
+                "application_status": "awaiting_documents",
+                "interrupt_signal": {
+                    "type": "document_upload",
+                    "required_documents": requested_docs,
+                    "message": f"Please upload required document(s): {docs_human}",
+                    "missing_documents": missing_docs,
+                    "unverified_documents": unverified_docs,
+                    "unverified_reasons": unverified_details,
+                },
+                "tool_calls": tool_calls,
+                "current_goal": "Collect mandatory verification documents",
+                "agent_thoughts": [
+                    f"Missing docs: {', '.join(missing_docs) if missing_docs else 'none'}",
+                    f"Unverified docs: {', '.join(unverified_docs) if unverified_docs else 'none'}",
+                ],
+                "underwriting_decision": "request_documents",
+                "underwriting_confidence": 0.9,
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+
         max_allowed_emi = float(loan_data.monthly_income or 0) * 0.5
         current_emi = float(loan_data.calculated_emi or 0)
         if current_emi <= max_allowed_emi:
             sanction_letter = generate_sanction_letter_pdf(loan_data)
+            verified_docs = [d for d in mandatory_docs if d in docs_by_type and bool((docs_by_type[d] or {}).get("verified"))]
+            docs_human = ", ".join(verified_docs) if verified_docs else "required documents"
             return {
-                "messages": [AIMessage(content="Salary slip verified. Your loan is approved and sanction letter is generated.")],
+                "messages": [AIMessage(content=f"Documents verified ({docs_human}). Your loan is approved and sanction letter is generated.")],
                 "loan_data": loan_data,
                 "next_step": "END",
                 "dialogue_stage": "closure",
                 "application_status": "approved",
                 "sanction_letter_path": sanction_letter,
+                "interrupt_signal": None,
                 "underwriting_reasoning": "Within 2x pre-approved limit and EMI <= 50% of monthly salary.",
                 "underwriting_decision": "approve",
                 "underwriting_confidence": 0.88,
                 "tool_calls": tool_calls,
-                "agent_thoughts": ["Approved after salary slip rule check."],
+                "agent_thoughts": [f"Approved after document verification: {docs_human}."],
                 "updated_at": datetime.utcnow().isoformat(),
             }
 
@@ -702,6 +894,7 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
             "dialogue_stage": "rejected",
             "application_status": "rejected",
             "rejection_reason": "EMI exceeds 50% of monthly salary.",
+            "interrupt_signal": None,
             "underwriting_reasoning": "Requested amount required salary-slip verification but EMI exceeded policy threshold.",
             "underwriting_decision": "reject",
             "underwriting_confidence": 0.9,
@@ -717,6 +910,7 @@ async def underwriting_agent_node(state: AgentState) -> Dict[str, Any]:
         "dialogue_stage": "rejected",
         "application_status": "rejected",
         "rejection_reason": "Requested amount exceeds 2x pre-approved limit.",
+        "interrupt_signal": None,
         "underwriting_reasoning": "Rejected as requested amount is beyond 2x pre-approved limit.",
         "underwriting_decision": "reject",
         "underwriting_confidence": 0.95,
@@ -754,3 +948,4 @@ async def reflection_node(state: AgentState) -> Dict[str, Any]:
         "reflection_count": reflection_count + 1,
         "updated_at": datetime.utcnow().isoformat(),
     }
+

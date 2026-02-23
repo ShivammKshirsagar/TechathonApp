@@ -10,7 +10,18 @@ interface SanctionLetterDocumentProps {
 export const SanctionLetterDocument: React.FC<SanctionLetterDocumentProps> = ({
   sanctionLetter
 }) => {
-  const { referenceNumber, generatedAt, validUntil, documentHash, applicantName, loanDetails } = sanctionLetter;
+  const {
+    referenceNumber,
+    referenceNo,
+    generatedAt,
+    date,
+    validUntil,
+    documentHash,
+    applicantName,
+    loanDetails,
+  } = sanctionLetter;
+  const displayReference = referenceNumber || referenceNo || '--';
+  const displayDate = generatedAt || date || '';
 
   return (
     <div className="bg-white p-8 max-w-4xl mx-auto" id="sanction-letter">
@@ -42,11 +53,11 @@ export const SanctionLetterDocument: React.FC<SanctionLetterDocumentProps> = ({
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <span className="text-gray-600">Reference No:</span>
-            <span className="font-semibold ml-2">{referenceNumber}</span>
+            <span className="font-semibold ml-2">{displayReference}</span>
           </div>
           <div>
             <span className="text-gray-600">Date:</span>
-            <span className="font-semibold ml-2">{formatDate(generatedAt)}</span>
+            <span className="font-semibold ml-2">{displayDate ? formatDate(displayDate) : '--'}</span>
           </div>
         </div>
       </div>
@@ -178,7 +189,7 @@ export const SanctionLetterDocument: React.FC<SanctionLetterDocumentProps> = ({
         <div className="grid grid-cols-2 gap-4 text-xs text-gray-600">
           <div>
             <p><strong>Document Hash:</strong> {documentHash}</p>
-            <p><strong>Generated:</strong> {formatDate(generatedAt)}</p>
+            <p><strong>Generated:</strong> {displayDate ? formatDate(displayDate) : '--'}</p>
           </div>
           <div className="text-right">
             <p>This is a system-generated document.</p>

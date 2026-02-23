@@ -7,6 +7,16 @@ export type AgentMessage = {
   content: string;
 };
 
+type RequiredDocType = 'salary_slip' | 'bank_statement' | 'address_proof' | 'selfie_pan';
+
+const DOC_ORDER: RequiredDocType[] = ['salary_slip', 'bank_statement', 'address_proof', 'selfie_pan'];
+
+const orderDocs = (docs: string[]): RequiredDocType[] => {
+  const incoming = docs.filter((d): d is RequiredDocType => DOC_ORDER.includes(d as RequiredDocType));
+  const deduped = Array.from(new Set(incoming));
+  return DOC_ORDER.filter((d) => deduped.includes(d));
+};
+
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const getOrCreate = (key: string) => {
@@ -29,6 +39,8 @@ export const useAgentChat = () => {
   ]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [uploadRequired, setUploadRequired] = useState(false);
+  const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocType[]>([]);
+  const [uploadedDocuments, setUploadedDocuments] = useState<RequiredDocType[]>([]);
   const [sanctionLetter, setSanctionLetter] = useState<SanctionLetter | null>(null);
   const sessionIdRef = useRef<string>('');
   const deviceIdRef = useRef<string>('');
@@ -49,8 +61,21 @@ export const useAgentChat = () => {
   const handleMeta = useCallback((meta: any) => {
     if (!meta) return;
     const requiresAction = meta.requires_action;
-    if (meta.requires_upload || (requiresAction && requiresAction.type === 'document_upload')) {
+    if (meta.status === 'approved' || meta.status === 'rejected' || meta.status === 'manual_review') {
+      setUploadRequired(false);
+      setRequiredDocuments([]);
+      setUploadedDocuments([]);
+    }
+    if (requiresAction && requiresAction.type === 'document_upload') {
+      const required = orderDocs(Array.isArray(requiresAction.required_documents) ? requiresAction.required_documents : []);
+      setRequiredDocuments(required);
+      setUploadRequired(required.length > 0);
+    } else if (meta.requires_upload) {
       setUploadRequired(true);
+    } else {
+      setUploadRequired(false);
+      setRequiredDocuments([]);
+      setUploadedDocuments([]);
     }
     if (meta.sanction_letter) {
       setSanctionLetter(meta.sanction_letter);
@@ -135,21 +160,44 @@ export const useAgentChat = () => {
     [handleMeta, isStreaming, updateAgentMessage]
   );
 
-  const uploadSalarySlip = useCallback(
-    async (file: File) => {
+  const uploadDocument = useCallback(
+    async (file: File, docType?: string) => {
       try {
+        const nextDoc = requiredDocuments.find((doc) => !uploadedDocuments.includes(doc));
+        const resolvedDocType = (docType || nextDoc || 'salary_slip') as RequiredDocType;
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('doc_type', 'salary_slip');
+        formData.append('doc_type', resolvedDocType);
         formData.append('session_id', sessionIdRef.current);
 
-        await fetch('/api/loan/upload', {
+        const uploadResponse = await fetch('/api/loan/upload', {
           method: 'POST',
           body: formData,
         });
+        if (!uploadResponse.ok) {
+          throw new Error('Upload request failed.');
+        }
+        const uploadData = await uploadResponse.json();
+        const verification = uploadData?.verification;
+        const verified = Boolean(verification?.verified);
+        const verificationReason = verification?.reason as string | undefined;
 
-        setUploadRequired(false);
-        await sendMessage('I have uploaded my salary slip.');
+        if (verified) {
+          setUploadedDocuments((prev) => {
+            if (prev.includes(resolvedDocType)) return prev;
+            return [...prev, resolvedDocType];
+          });
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: createId(),
+              role: 'agent',
+              content: `Uploaded ${resolvedDocType}, but verification failed${verificationReason ? `: ${verificationReason}` : '.'} Please re-upload a matching document.`,
+            },
+          ]);
+        }
+        await sendMessage(`I have uploaded my ${resolvedDocType}.`);
       } catch {
         setMessages((prev) => [
           ...prev,
@@ -157,7 +205,7 @@ export const useAgentChat = () => {
         ]);
       }
     },
-    [sendMessage]
+    [requiredDocuments, uploadedDocuments, sendMessage]
   );
 
   return {
@@ -165,7 +213,9 @@ export const useAgentChat = () => {
     sendMessage,
     isStreaming,
     uploadRequired,
-    uploadSalarySlip,
+    requiredDocuments,
+    uploadedDocuments,
+    uploadDocument,
     sanctionLetter,
   };
 };

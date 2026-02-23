@@ -23,6 +23,7 @@ from app.models.state import AgentState, LoanApplicationDetails, ToolCall
 from app.settings import settings
 from app.services.storage_service import save_upload_file
 from app.services.offer_mart_service import get_mock_customers, get_offer_mart
+from app.services.document_verification_service import verify_uploaded_document
 
 
 # Global state
@@ -267,6 +268,16 @@ async def _register_document(
             "verified": False,
         }
     )
+    verification_result = verify_uploaded_document(
+        doc_type=doc_type or "unknown",
+        file_path=saved_path,
+        filename=file_upload.filename or "",
+        content_type=file_upload.content_type,
+        pan=loan_data.pan,
+        aadhaar=loan_data.aadhaar,
+    )
+    documents_received[-1]["verified"] = bool(verification_result.get("verified"))
+    documents_received[-1]["verification"] = verification_result
     if doc_type == "salary_slip":
         loan_data.salary_slip_path = saved_path
         loan_data.salary_slip_data = {
@@ -306,6 +317,7 @@ async def _register_document(
         "document_received": file_upload.filename,
         "doc_type": doc_type,
         "path": saved_path,
+        "verification": verification_result,
     }
 
 
