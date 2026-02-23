@@ -24,7 +24,7 @@ export default function ChatLayout({
   scrollContainerRef,
 }: ChatLayoutProps) {
   return (
-    <div className="flex flex-col lg:flex-row min-h-[calc(100vh-64px)] relative">
+    <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] relative">
       {/* Chat Area */}
       <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
         <div id="chat-scroll-container" ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 pb-24">
@@ -32,7 +32,7 @@ export default function ChatLayout({
             {children}
           </div>
         </div>
-        <div className="sticky bottom-0 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+        <div className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 shrink-0">
           <MessageInput
             onSend={onSendMessage}
             isLoading={isLoading}

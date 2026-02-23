@@ -8,7 +8,7 @@ export default function TopNav() {
   const router = useRouter();
 
   return (
-    <nav className="bg-gradient-to-r from-blue-600 to-teal-500 px-6 py-4 flex items-center justify-between">
+    <nav className="bg-gradient-to-r from-blue-600 to-teal-500 px-6 py-4 flex items-center justify-between sticky top-0 z-50">
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center transform rotate-45">
           <div className="w-4 h-4 bg-blue-600 rounded-sm transform -rotate-45"></div>

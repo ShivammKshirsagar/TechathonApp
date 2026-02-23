@@ -69,7 +69,7 @@ export default function MessageInput({
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 lg:right-1/3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4 z-10">
+    <div className="w-full bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-6 py-4">
       <div className="max-w-4xl mx-auto">
         {uploadRequired ? (
           <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl px-5 py-4 border border-gray-200 dark:border-gray-700 space-y-3">

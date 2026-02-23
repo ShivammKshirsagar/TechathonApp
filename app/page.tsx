@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import AppShell from '@/components/layout/AppShell';
 import ChatLayout from '@/components/chat/ChatLayout';
 import ChatBubble from '@/components/chat/ChatBubble';
@@ -23,16 +23,29 @@ export default function HomePage() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const frame = requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      endRef.current?.scrollIntoView({ block: 'end' });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [messages, isStreaming]);
+
   useEffect(() => {
     const container = scrollContainerRef.current;
-    if (container) {
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth',
-      });
-    }
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages, isStreaming]);
+    if (!container || !('ResizeObserver' in window)) return;
+
+    const observer = new ResizeObserver(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <AppShell>
